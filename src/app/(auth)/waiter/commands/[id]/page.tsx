@@ -103,6 +103,40 @@ export default function CommandDetails() {
           return;
         }
 
+        // Debug para verificar os valores relacionados à mesa
+        console.log('Valores da mesa na comanda:', {
+          table_number: commandData.table_number,
+          table: commandData.table,
+          tableNumber: commandData.tableNumber,
+          table_id: commandData.table_id,
+          tableId: commandData.tableId
+        });
+        
+        // Se temos o table_id/tableId mas não temos table_number, buscar a mesa pelo ID
+        if ((commandData.table_id || commandData.tableId) && 
+            !commandData.table_number && !commandData.table && !commandData.tableNumber) {
+          try {
+            const tableId = commandData.table_id || commandData.tableId;
+            console.log(`Buscando mesa com ID: ${tableId}`);
+            
+            // Buscar mesa pelo ID
+            const { data: tableData } = await supabase
+              .from('tables')
+              .select('number')
+              .eq('id', tableId)
+              .maybeSingle();
+              
+            if (tableData?.number) {
+              console.log(`Mesa encontrada! Número: ${tableData.number}`);
+              // Atualizar número da mesa
+              commandData.table_number = tableData.number;
+              commandData.table = tableData.number;
+            }
+          } catch (error) {
+            console.error('Erro ao buscar mesa pelo ID:', error);
+          }
+        }
+
         // Verificar se a comanda pertence ao restaurante do usuário
         const userRestaurantId = restaurantId;
         let hasPermission = true;
@@ -442,7 +476,7 @@ export default function CommandDetails() {
         <div>
           <div className="flex items-center">
             <h1 className="text-3xl font-bold text-gray-900">
-              Mesa {command.table_number || command.table || command.tableNumber || command.table_id || command.tableId || 'N/A'}
+              Mesa {command.table_number || command.table || command.tableNumber || 'N/A'}
             </h1>
             <span className="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
               {command.status === 'open' ? 'Aberta' : 'Fechada'}
@@ -610,7 +644,7 @@ export default function CommandDetails() {
           <div className="bg-white rounded-lg overflow-hidden shadow-xl max-w-md w-full">
             <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
               <h3 className="text-lg font-medium text-gray-900">
-                Adicionar Item à Mesa {command.table_number || command.table || command.tableNumber || command.table_id || command.tableId || 'N/A'}
+                Adicionar Item à Mesa {command.table_number || command.table || command.tableNumber || 'N/A'}
               </h3>
               <button 
                 onClick={() => setShowAddItemModal(false)}

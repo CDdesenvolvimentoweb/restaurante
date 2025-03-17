@@ -87,6 +87,45 @@ export default function NewCommand() {
       console.log('Tentando criar comanda para mesa:', tableNumber);
       console.log('ID do restaurante:', restaurantId);
       
+      // Verificar se a mesa existe na tabela 'tables'
+      let tableId = null;
+      let tableExists = false;
+      
+      try {
+        // Buscar a mesa pelo número
+        const { data: tableData, error: tableError } = await supabase
+          .from('tables')
+          .select('id')
+          .eq('number', tableNumber)
+          .eq('restaurant_id', restaurantId)
+          .maybeSingle();
+          
+        if (!tableError && tableData) {
+          tableId = tableData.id;
+          tableExists = true;
+          console.log(`Mesa encontrada: ${tableNumber}, ID: ${tableId}`);
+        } else {
+          // Tentar com o campo restaurantId
+          const { data: tableData2, error: tableError2 } = await supabase
+            .from('tables')
+            .select('id')
+            .eq('number', tableNumber)
+            .eq('restaurantId', restaurantId)
+            .maybeSingle();
+            
+          if (!tableError2 && tableData2) {
+            tableId = tableData2.id;
+            tableExists = true;
+            console.log(`Mesa encontrada (usando restaurantId): ${tableNumber}, ID: ${tableId}`);
+          } else {
+            console.log(`Mesa não encontrada no cadastro: ${tableNumber}. Criando comanda apenas com o número.`);
+          }
+        }
+      } catch (tableSearchError) {
+        console.error('Erro ao buscar mesa:', tableSearchError);
+        console.log('Continuando com a criação da comanda apenas com o número da mesa');
+      }
+      
       // Criar objeto simplificado com os campos mais prováveis
       const commandData: any = {
         status: 'open',
@@ -95,6 +134,13 @@ export default function NewCommand() {
         table_number: tableNumber, 
         table: tableNumber      // Adicionar também no campo 'table' para compatibilidade
       };
+      
+      // Se a mesa foi encontrada no cadastro, adicionar o ID
+      if (tableExists && tableId) {
+        // Não usar tableId ou table_id para armazenar o número da mesa
+        // Esses campos devem conter apenas o ID real da mesa no banco
+        commandData.table_id = tableId;
+      }
       
       // Adicionar restaurante apenas se disponível
       if (restaurantId) {

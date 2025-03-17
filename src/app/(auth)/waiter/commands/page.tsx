@@ -434,9 +434,46 @@ export default function WaiterCommands() {
 
   // Função auxiliar para processar a lista de comandas
   const processCommandList = async (supabase: any, commandsList: Command[]) => {
+    // Log para depuração dos dados das comandas
+    console.log('Dados das comandas recebidas:', JSON.stringify(commandsList, null, 2));
+    
     // Carregar itens para cada comanda
     const commandsWithItems = await Promise.all(
       commandsList.map(async (command) => {
+        // Debug para verificar os valores relacionados à mesa
+        console.log(`Comanda ID ${command.id} - Valores da mesa:`, {
+          table_number: command.table_number,
+          table: command.table,
+          tableNumber: command.tableNumber,
+          table_id: command.table_id,
+          tableId: command.tableId
+        });
+        
+        // Se temos o table_id/tableId mas não temos table_number, buscar a mesa pelo ID
+        if ((command.table_id || command.tableId) && 
+            !command.table_number && !command.table && !command.tableNumber) {
+          try {
+            const tableId = command.table_id || command.tableId;
+            console.log(`Buscando mesa com ID: ${tableId}`);
+            
+            // Buscar mesa pelo ID
+            const { data: tableData } = await supabase
+              .from('tables')
+              .select('number')
+              .eq('id', tableId)
+              .maybeSingle();
+              
+            if (tableData?.number) {
+              console.log(`Mesa encontrada! Número: ${tableData.number}`);
+              // Atualizar número da mesa
+              command.table_number = tableData.number;
+              command.table = tableData.number;
+            }
+          } catch (error) {
+            console.error('Erro ao buscar mesa pelo ID:', error);
+          }
+        }
+        
         const items = await fetchCommandItems(supabase, command.id);
         
         // Calcular total
@@ -449,6 +486,7 @@ export default function WaiterCommands() {
       })
     );
 
+    console.log('Comandas processadas com itens:', commandsWithItems);
     setCommands(commandsWithItems);
     setFilteredCommands(commandsWithItems);
   };
@@ -741,7 +779,7 @@ export default function WaiterCommands() {
                 <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
                   <div>
                     <span className="font-medium text-gray-900">
-                      Mesa {command.table_number || command.table || command.tableNumber || command.table_id || command.tableId || 'N/A'}
+                      Mesa {command.table_number || command.table || command.tableNumber || 'N/A'}
                     </span>
                     {command.client_name && (
                       <span className="ml-2 text-sm text-gray-500">
@@ -834,7 +872,7 @@ export default function WaiterCommands() {
           <div className="bg-white rounded-lg overflow-hidden shadow-xl max-w-md w-full">
             <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
               <h3 className="text-lg font-medium text-gray-900">
-                Adicionar Item à Mesa {selectedCommand.table_number || selectedCommand.table || 'N/A'}
+                Adicionar Item à Mesa {selectedCommand.table_number || selectedCommand.table || selectedCommand.tableNumber || 'N/A'}
               </h3>
               <button 
                 onClick={() => setShowAddItemModal(false)}
