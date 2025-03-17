@@ -49,34 +49,133 @@ export default function CommandsList() {
         setUser(profile as User);
 
         // Obter comandas do restaurante
-        let query = supabase
+        const restaurantId = profile.restaurant_id || profile.restaurantId;
+        console.log('ID do restaurante do admin:', restaurantId);
+        
+        // Verificar a estrutura da tabela commands
+        const { data: commandSample, error: structureError } = await supabase
           .from('commands')
-          .select('*, table:table_id(*), user:user_id(*)')
-          .order('created_at', { ascending: false });
-
-        // Construir query baseada nas tabelas do restaurante
-        const { data: tables } = await supabase
-          .from('tables')
-          .select('id')
-          .eq('restaurant_id', profile.restaurantId);
-
-        if (tables && tables.length > 0) {
-          const tableIds = tables.map(t => t.id);
-          query = query.in('table_id', tableIds);
-        } else {
-          // Se não houver mesas, não deve haver comandas
-          setCommands([]);
+          .select('*')
+          .limit(1);
+          
+        if (structureError) {
+          console.error('Erro ao verificar estrutura da tabela commands:', structureError);
+          toast.error(`Erro ao acessar tabela de comandas: ${structureError.message}`);
           setLoading(false);
           return;
         }
-
-        const { data, error } = await query;
-
-        if (error) {
-          throw error;
+        
+        if (commandSample && commandSample.length > 0) {
+          console.log('Colunas na tabela commands:', Object.keys(commandSample[0]));
+        } else {
+          console.log('Nenhuma comanda encontrada para verificar estrutura');
+        }
+        
+        // Tentar buscar comandas diretamente pelo restaurant_id/restaurantId
+        try {
+          console.log('Tentando buscar comandas pelo restaurant_id...');
+          const { data: directCommands, error: directError } = await supabase
+            .from('commands')
+            .select('*, table:table_id(*), user:user_id(*)')
+            .eq('restaurant_id', restaurantId)
+            .order('created_at', { ascending: false });
+            
+          if (!directError && directCommands && directCommands.length > 0) {
+            console.log(`Comandas encontradas diretamente (${directCommands.length}):`, directCommands);
+            setCommands(directCommands as unknown as CommandWithRelations[]);
+            setLoading(false);
+            return;
+          }
+          
+          console.log('Tentando com restaurantId...');
+          const { data: directCommands2, error: directError2 } = await supabase
+            .from('commands')
+            .select('*, table:table_id(*), user:user_id(*)')
+            .eq('restaurantId', restaurantId)
+            .order('created_at', { ascending: false });
+            
+          if (!directError2 && directCommands2 && directCommands2.length > 0) {
+            console.log(`Comandas encontradas com restaurantId (${directCommands2.length}):`, directCommands2);
+            setCommands(directCommands2 as unknown as CommandWithRelations[]);
+            setLoading(false);
+            return;
+          }
+        } catch (directQueryError) {
+          console.error('Erro ao tentar busca direta por ID do restaurante:', directQueryError);
+        }
+        
+        // Continuar com a abordagem baseada em mesas
+        console.log('Tentando abordagem baseada em mesas do restaurante...');
+        
+        // Buscar mesas primeiro com restaurant_id
+        let tables;
+        try {
+          console.log('Buscando mesas com restaurant_id...');
+          const { data: tableData1, error: tableError1 } = await supabase
+            .from('tables')
+            .select('id')
+            .eq('restaurant_id', restaurantId);
+            
+          if (!tableError1 && tableData1 && tableData1.length > 0) {
+            tables = tableData1;
+            console.log(`Mesas encontradas com restaurant_id (${tables.length})`, tables);
+          } else {
+            // Tentar com restaurantId
+            console.log('Tentando buscar mesas com restaurantId...');
+            const { data: tableData2, error: tableError2 } = await supabase
+              .from('tables')
+              .select('id')
+              .eq('restaurantId', restaurantId);
+              
+            if (!tableError2 && tableData2 && tableData2.length > 0) {
+              tables = tableData2;
+              console.log(`Mesas encontradas com restaurantId (${tables.length})`, tables);
+            }
+          }
+        } catch (tableError) {
+          console.error('Erro ao buscar mesas:', tableError);
         }
 
-        setCommands(data as CommandWithRelations[] || []);
+        // Verifique quais colunas existem na tabela commands
+        let tableIdField = 'table_id';
+        let userIdField = 'user_id';
+        
+        if (commandSample && commandSample.length > 0) {
+          const columns = Object.keys(commandSample[0]);
+          if (columns.includes('tableId')) tableIdField = 'tableId';
+          if (columns.includes('userId')) userIdField = 'userId';
+          console.log(`Usando campos: ${tableIdField} e ${userIdField}`);
+        }
+        
+        if (tables && tables.length > 0) {
+          const tableIds = tables.map(t => t.id);
+          console.log('IDs das mesas para filtro:', tableIds);
+          
+          let query = supabase
+            .from('commands')
+            .select(`*, table:${tableIdField}(*), user:${userIdField}(*)`)
+            .in(tableIdField, tableIds)
+            .order('created_at', { ascending: false });
+
+          const { data, error } = await query;
+
+          if (error) {
+            console.error('Erro na busca final:', error);
+            throw error;
+          }
+
+          if (data && data.length > 0) {
+            console.log(`Comandas encontradas via relação com mesas (${data.length}):`, data);
+            setCommands(data as unknown as CommandWithRelations[] || []);
+          } else {
+            console.log('Nenhuma comanda encontrada via relação com mesas');
+            setCommands([]);
+          }
+        } else {
+          // Se não houver mesas, não deve haver comandas
+          console.log('Nenhuma mesa encontrada para o restaurante:', restaurantId);
+          setCommands([]);
+        }
       } catch (error: any) {
         console.error('Erro ao carregar comandas:', error);
         toast.error('Erro ao carregar comandas: ' + error.message);

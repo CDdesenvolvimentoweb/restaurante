@@ -264,18 +264,59 @@ export default function Reports() {
       console.log(`Encontradas ${commands.length} comandas para análise`);
 
       // 2. Calcular métricas de vendas
-      const total = commands.reduce((sum, cmd) => sum + cmd.total, 0);
-      const count = commands.length;
+      console.log('Iniciando cálculo de métricas de vendas com', commands.length, 'comandas');
+
+      // Calcular total somando os itens se a comanda não tiver o campo total preenchido
+      let total = 0;
+      let count = commands.length;
+      
+      commands.forEach((cmd, index) => {
+        console.log(`Analisando comanda ${index + 1}/${commands.length} - ID: ${cmd.id}`);
+        
+        // Verificar se a comanda tem campo total preenchido corretamente
+        if (cmd.total && !isNaN(cmd.total) && cmd.total > 0) {
+          console.log(`Usando valor total da comanda: ${cmd.total}`);
+          total += cmd.total;
+        } else {
+          console.log('Comanda sem total válido, calculando a partir dos itens');
+          
+          // Tentar calcular o total a partir dos itens
+          const items = cmd.items || cmd.command_products || [];
+          if (Array.isArray(items) && items.length > 0) {
+            const itemsTotal = items.reduce((sum, item) => {
+              const quantity = item.quantity || item.quantidade || 0;
+              const price = item.price || item.preco || 0;
+              const itemTotal = price * quantity;
+              console.log(`Item: ${item.id}, Quantidade: ${quantity}, Preço: ${price}, Subtotal: ${itemTotal}`);
+              return sum + itemTotal;
+            }, 0);
+            
+            console.log(`Total calculado a partir dos itens: ${itemsTotal}`);
+            total += itemsTotal;
+            
+            // Atualizar o total da comanda para futuros cálculos
+            cmd.total = itemsTotal;
+          } else {
+            console.warn(`Comanda ${cmd.id} sem itens válidos para calcular total`);
+          }
+        }
+      });
+      
+      console.log(`Total geral de vendas: ${total}, Número de comandas: ${count}`);
       const average = count > 0 ? total / count : 0;
+      console.log(`Ticket médio: ${average}`);
       
       setTotalSales(total);
       setTotalCommands(count);
       setAverageTicket(average);
 
       // 3. Agrupar vendas por dia
+      console.log('Iniciando agrupamento de vendas por dia');
       const salesByDay = new Map<string, {total: number, count: number}>();
       
-      commands.forEach(cmd => {
+      commands.forEach((cmd, index) => {
+        console.log(`Processando comanda ${index + 1}/${commands.length} para agrupamento diário`);
+        
         // Determinar qual campo usar para data de fechamento
         let closedDate = null;
         if (cmd.closed_at) {
@@ -284,28 +325,36 @@ export default function Reports() {
           closedDate = cmd.closedAt;
         } else if (cmd.fechado_em) {
           closedDate = cmd.fechado_em;
+        } else if (cmd.created_at) {
+          // Se não tiver data de fechamento, usar a de criação
+          closedDate = cmd.created_at;
+          console.log(`Usando data de criação para comanda ${cmd.id}`);
         }
         
         if (!closedDate) {
-          console.log('Comanda sem data de fechamento:', cmd.id);
+          console.log('Comanda sem data de fechamento ou criação:', cmd.id);
           return;
         }
         
         const date = new Date(closedDate).toISOString().split('T')[0];
+        console.log(`Comanda ${cmd.id} - Data: ${date}, Valor: ${cmd.total}`);
+        
         const current = salesByDay.get(date) || { total: 0, count: 0 };
         
         salesByDay.set(date, {
-          total: current.total + cmd.total,
+          total: current.total + (cmd.total || 0),
           count: current.count + 1
         });
       });
       
+      console.log(`Vendas agrupadas em ${salesByDay.size} dias diferentes`);
       const dailySalesData: SalesData[] = Array.from(salesByDay).map(([date, data]) => ({
         date,
         total: data.total,
         commandsCount: data.count
       })).sort((a, b) => a.date.localeCompare(b.date));
       
+      console.log('Dados de vendas diárias:', dailySalesData);
       setDailySales(dailySalesData);
 
       // 4. Verificar se a tabela de produtos da comanda existe
@@ -320,9 +369,12 @@ export default function Reports() {
         setTopProducts([]);
       } else {
         // Calcular produtos mais vendidos
+        console.log('Iniciando cálculo de produtos mais vendidos');
         const productSales = new Map<string, {product: Product, quantity: number, total: number}>();
         
-        commands.forEach(cmd => {
+        commands.forEach((cmd, index) => {
+          console.log(`Processando comanda ${index + 1}/${commands.length} para produtos`);
+          
           // Verificar se items existe e é um array
           const items = cmd.items || cmd.command_products || [];
           if (!Array.isArray(items) || items.length === 0) {
@@ -330,17 +382,27 @@ export default function Reports() {
             return;
           }
           
-          items.forEach((item: any) => {
+          console.log(`Comanda ${cmd.id} tem ${items.length} itens para processar`);
+          
+          items.forEach((item: any, itemIndex: number) => {
             // O produto pode estar em diferentes propriedades
             const product = item.product || item.produto;
-            if (!product) {
-              console.log('Item sem produto:', item.id);
+            if (!product || !product.id) {
+              console.log(`Item ${itemIndex + 1}/${items.length} sem produto válido:`, item.id);
               return;
             }
             
             const productId = product.id;
+            const productName = product.name || product.nome || 'Produto sem nome';
             const quantity = item.quantity || item.quantidade || 0;
             const price = item.price || item.preco || 0;
+            
+            console.log(`Produto: ${productName} (${productId}), Quantidade: ${quantity}, Preço: ${price}`);
+            
+            if (quantity <= 0 || price <= 0) {
+              console.log(`Item com quantidade ou preço inválido, ignorando: Qtd=${quantity}, Preço=${price}`);
+              return;
+            }
             
             const current = productSales.get(productId) || {
               product,
@@ -356,26 +418,37 @@ export default function Reports() {
           });
         });
         
+        console.log(`Dados coletados para ${productSales.size} produtos diferentes`);
+        
         const topProductsData = Array.from(productSales.values())
           .sort((a, b) => b.total - a.total)
           .slice(0, 5);
         
+        console.log('Top 5 produtos mais vendidos:', topProductsData);
         setTopProducts(topProductsData);
       }
 
       // 5. Calcular desempenho dos garçons
+      console.log('Iniciando cálculo de desempenho dos garçons');
       const staffData = new Map<string, {id: string, name: string, commandsCount: number, total: number}>();
       
-      commands.forEach(cmd => {
+      commands.forEach((cmd, index) => {
+        console.log(`Processando comanda ${index + 1}/${commands.length} para estatísticas de garçons`);
+        
         // O usuário pode estar em diferentes propriedades
-        const cmdUser = cmd.user || cmd.usuario || cmd.garcom;
-        if (!cmdUser) {
-          console.log('Comanda sem usuário associado:', cmd.id);
+        const cmdUser = cmd.user || cmd.usuario || cmd.garcom || cmd.waiter;
+        if (!cmdUser || !cmdUser.id) {
+          console.log('Comanda sem usuário associado ou ID inválido:', cmd.id);
           return;
         }
         
         const userId = cmdUser.id;
-        const userName = cmdUser.name || cmdUser.nome || userId;
+        const userName = cmdUser.name || cmdUser.nome || ('Garçom ' + userId.substring(0, 8));
+        
+        // Usar o total já calculado anteriormente
+        const cmdTotal = cmd.total || 0;
+        
+        console.log(`Associando comanda ${cmd.id} ao garçom ${userName} (${userId}), valor: ${cmdTotal}`);
         
         const current = staffData.get(userId) || {
           id: userId,
@@ -387,13 +460,15 @@ export default function Reports() {
         staffData.set(userId, {
           ...current,
           commandsCount: current.commandsCount + 1,
-          total: current.total + cmd.total
+          total: current.total + cmdTotal
         });
       });
       
+      console.log(`Dados de desempenho coletados para ${staffData.size} garçons`);
       const staffPerformanceData = Array.from(staffData.values())
         .sort((a, b) => b.total - a.total);
       
+      console.log('Dados de desempenho dos garçons:', staffPerformanceData);
       setStaffPerformance(staffPerformanceData);
       console.log('Relatório gerado com sucesso');
       

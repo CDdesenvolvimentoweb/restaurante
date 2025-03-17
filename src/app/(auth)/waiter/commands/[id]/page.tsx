@@ -417,18 +417,64 @@ export default function CommandDetails() {
       setSubmitting(true);
       const supabase = createClient();
       
-      const { error } = await supabase
+      console.log('Tentando fechar comanda ID:', commandId);
+      
+      // Verificar se a comanda existe e obter sua estrutura
+      const { data: commandCheck, error: checkError } = await supabase
         .from('commands')
-        .update({ 
-          status: 'closed',
-          closed_at: new Date().toISOString() 
-        })
-        .eq('id', commandId);
+        .select('*')
+        .eq('id', commandId)
+        .single();
         
-      if (error) {
-        throw error;
+      if (checkError) {
+        console.error('Erro ao verificar comanda antes de fechar:', checkError);
+        throw new Error(`Erro ao verificar comanda: ${checkError.message || JSON.stringify(checkError)}`);
       }
       
+      if (!commandCheck) {
+        throw new Error('Comanda não encontrada ou foi excluída');
+      }
+      
+      console.log('Comanda encontrada, dados atuais:', commandCheck);
+      console.log('Campos disponíveis:', Object.keys(commandCheck));
+      
+      // Preparar dados de atualização
+      const closeTime = new Date().toISOString();
+      console.log('Atualizando status para: closed');
+      console.log('Definindo closed_at para:', closeTime);
+      
+      const updateData: any = { 
+        status: 'closed'
+      };
+      
+      // Verificar se o campo closed_at existe na tabela
+      if (Object.keys(commandCheck).includes('closed_at')) {
+        updateData.closed_at = closeTime;
+      } else if (Object.keys(commandCheck).includes('closedAt')) {
+        // Tentar com formato camelCase se o snake_case não existir
+        updateData.closedAt = closeTime;
+      } else {
+        console.warn('Campo closed_at/closedAt não encontrado na tabela commands');
+      }
+      
+      console.log('Enviando dados de atualização:', updateData);
+      
+      // Atualizar comanda
+      const { data: updateResult, error } = await supabase
+        .from('commands')
+        .update(updateData)
+        .eq('id', commandId)
+        .select();
+        
+      if (error) {
+        console.error('Erro detalhado ao fechar comanda:', error);
+        console.error('Código do erro:', error.code);
+        console.error('Mensagem do erro:', error.message);
+        console.error('Detalhes do erro:', error.details);
+        throw new Error(`Erro ao fechar comanda: ${error.message || JSON.stringify(error)}`);
+      }
+      
+      console.log('Comanda fechada com sucesso, resultado:', updateResult);
       toast.success('Comanda fechada com sucesso!');
       
       // Redirecionar para a lista de comandas
@@ -437,7 +483,17 @@ export default function CommandDetails() {
       }, 1500);
     } catch (error: any) {
       console.error('Erro ao fechar comanda:', error);
-      toast.error(`Erro ao fechar comanda: ${error.message}`);
+      
+      // Melhorar tratamento de erros
+      let errorMessage = 'Erro desconhecido';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        errorMessage = JSON.stringify(error);
+      }
+      
+      toast.error(`Erro ao fechar comanda: ${errorMessage}`);
     } finally {
       setSubmitting(false);
     }
