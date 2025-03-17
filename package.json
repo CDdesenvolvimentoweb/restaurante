@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "vercel-build": "next build",
+    "vercel-deploy": "vercel deploy --prod"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.10.0",

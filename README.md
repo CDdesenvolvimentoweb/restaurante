@@ -113,3 +113,56 @@ Para contribuir com o projeto:
 3. Faça commit das alterações (`git commit -m 'Adiciona nova feature'`)
 4. Envie para o branch (`git push origin feature/nova-feature`)
 5. Abra um Pull Request
+
+## Deploy na Vercel
+
+Este projeto está configurado para ser facilmente implantado na Vercel. Siga as etapas abaixo para realizar o deploy:
+
+### Pré-requisitos
+
+1. Crie uma conta na [Vercel](https://vercel.com).
+2. Instale a Vercel CLI (opcional para deploy via linha de comando):
+   ```bash
+   npm i -g vercel
+   ```
+
+### Método 1: Deploy via Dashboard da Vercel
+
+1. Acesse o [Dashboard da Vercel](https://vercel.com/dashboard).
+2. Clique em "New Project".
+3. Importe o repositório do projeto (GitHub, GitLab ou Bitbucket).
+4. Configure as variáveis de ambiente:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+5. Clique em "Deploy".
+
+### Método 2: Deploy via CLI da Vercel
+
+1. Autentique-se na sua conta Vercel:
+   ```bash
+   vercel login
+   ```
+2. No diretório do projeto, execute:
+   ```bash
+   npm run vercel-deploy
+   ```
+3. Siga as instruções na linha de comando para configurar o projeto.
+
+### Variáveis de Ambiente
+
+Certifique-se de configurar as seguintes variáveis de ambiente no dashboard da Vercel:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=sua_url_do_supabase
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_chave_anon_do_supabase
+SUPABASE_SERVICE_ROLE_KEY=sua_chave_service_role_do_supabase
+```
+
+### Configuração Adicional
+
+1. **Domínio Personalizado**: Você pode configurar um domínio personalizado no dashboard da Vercel.
+2. **Monitoramento**: Acesse as análises e logs de erro através do dashboard para monitorar sua aplicação.
+3. **Previews Automáticos**: A Vercel cria automaticamente previews para cada pull request, facilitando o teste de mudanças antes de mesclar no branch principal.
+
+Para mais informações, consulte a [documentação oficial da Vercel](https://vercel.com/docs).
