@@ -75,91 +75,148 @@ export default function ManagerDashboard() {
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
         
-        // Usar a abordagem mais robusta que desenvolvemos para buscar comandas
-        console.log('Buscando comandas do dia atual...');
+        console.log('Buscando comandas para o restaurante ID:', restaurantId);
         
-        // Verificar estrutura da tabela
-        let closedAtField = null;
+        // Verificar estrutura da tabela commands
         const { data: commandSample } = await supabase
           .from('commands')
           .select('*')
           .limit(1);
           
+        let closedAtField = 'closed_at';
+        let createdAtField = 'created_at';
+        
         if (commandSample && commandSample.length > 0) {
           const columns = Object.keys(commandSample[0]);
-          if (columns.includes('closed_at')) closedAtField = 'closed_at';
-          else if (columns.includes('closedAt')) closedAtField = 'closedAt';
-          console.log('Campo de data de fechamento:', closedAtField);
+          console.log('Colunas disponíveis na tabela commands:', columns);
+          
+          if (!columns.includes('closed_at') && columns.includes('closedAt')) {
+            closedAtField = 'closedAt';
+          }
+          
+          if (!columns.includes('created_at') && columns.includes('createdAt')) {
+            createdAtField = 'createdAt';
+          }
         }
         
-        let cmdQuery = supabase
-          .from('commands')
-          .select(`
-            *,
-            table:table_id(*),
-            user:user_id(*)
-          `);
-          
-        if (closedAtField) {
-          cmdQuery = cmdQuery.gte(closedAtField, startOfDay.toISOString());
-        }
-          
-        const { data: todayCommands } = await cmdQuery
-          .eq('restaurant_id', restaurantId)
-          .eq('status', 'closed');
-
-        // Se não encontrar diretamente, tentar com restaurantId
-        let commands = todayCommands;
-        if (!commands || commands.length === 0) {
-          const { data: altCommands } = await supabase
-            .from('commands')
-            .select(`
-              *,
-              table:table_id(*),
-              user:user_id(*)
-            `)
-            .eq('restaurantId', restaurantId)
-            .eq('status', 'closed');
+        // Inicializar arrays para diferentes tipos de comandas
+        let todayClosedCommands: any[] = [];
+        let openCommands: any[] = [];
+        
+        // Buscar comandas através das mesas (método mais seguro)
+        try {
+          // Primeiro buscar todas as mesas do restaurante
+          if (!tables || tables.length === 0) {
+            console.log('Nenhuma mesa encontrada para este restaurante');
+          } else {
+            const tableIds = tables.map(t => t.id);
+            console.log(`Encontradas ${tableIds.length} mesas. Buscando comandas associadas...`);
             
-          commands = altCommands;
+            // Buscar comandas fechadas do dia
+            const { data: closedCommandsData } = await supabase
+              .from('commands')
+              .select(`
+                *,
+                table:table_id(*),
+                user:user_id(*)
+              `)
+              .in('table_id', tableIds)
+              .eq('status', 'closed')
+              .gte(createdAtField, startOfDay.toISOString());
+              
+            console.log(`Encontradas ${closedCommandsData?.length || 0} comandas fechadas hoje`);
+            todayClosedCommands = closedCommandsData || [];
+            
+            // Buscar comandas abertas
+            const { data: openCommandsData } = await supabase
+              .from('commands')
+              .select(`
+                *,
+                table:table_id(*),
+                user:user_id(*)
+              `)
+              .in('table_id', tableIds)
+              .eq('status', 'open')
+              .order(createdAtField, { ascending: false });
+              
+            console.log(`Encontradas ${openCommandsData?.length || 0} comandas abertas`);
+            openCommands = openCommandsData || [];
+          }
+        } catch (error: any) {
+          console.error('Erro na busca de comandas:', error);
+          toast.error(`Erro ao buscar dados: ${error.message}`);
         }
         
-        // Calcular vendas do dia
+        // Para cada comanda fechada, buscar seus itens para cálculo de vendas
         let todaySales = 0;
-        if (commands && commands.length > 0) {
-          todaySales = commands.reduce((sum, cmd) => {
+        
+        if (todayClosedCommands.length > 0) {
+          const commandsWithItems = await Promise.all(
+            todayClosedCommands.map(async (command) => {
+              try {
+                // Tentar buscar itens em command_products primeiro
+                const { data: products } = await supabase
+                  .from('command_products')
+                  .select('*, product:product_id(*)')
+                  .eq('command_id', command.id);
+                  
+                if (products && products.length > 0) {
+                  // Calcular total baseado nos itens
+                  const total = products.reduce((sum, item) => {
+                    const quantity = item.quantity || 0;
+                    const price = item.price || 0;
+                    return sum + (price * quantity);
+                  }, 0);
+                  
+                  return { ...command, items: products, calculatedTotal: total };
+                }
+                
+                // Se não encontrar, tentar com command_items
+                const { data: items } = await supabase
+                  .from('command_items')
+                  .select('*, product:product_id(*)')
+                  .eq('command_id', command.id);
+                  
+                if (items && items.length > 0) {
+                  // Calcular total baseado nos itens
+                  const total = items.reduce((sum, item) => {
+                    const quantity = item.quantity || 0;
+                    const price = item.price || 0;
+                    return sum + (price * quantity);
+                  }, 0);
+                  
+                  return { ...command, items, calculatedTotal: total };
+                }
+                
+                // Se não encontrar itens, usar o total da comanda
+                return { ...command, items: [], calculatedTotal: command.total || 0 };
+              } catch (error) {
+                console.error(`Erro ao buscar itens da comanda ${command.id}:`, error);
+                return { ...command, items: [], calculatedTotal: command.total || 0 };
+              }
+            })
+          );
+          
+          // Calcular vendas do dia
+          todaySales = commandsWithItems.reduce((sum, cmd) => {
+            // Verificar se temos um total calculado
+            if (cmd.calculatedTotal && !isNaN(cmd.calculatedTotal) && cmd.calculatedTotal > 0) {
+              return sum + cmd.calculatedTotal;
+            }
+            
             // Verificar se o total está preenchido corretamente
             if (cmd.total && !isNaN(cmd.total) && cmd.total > 0) {
               return sum + cmd.total;
             }
-            // Se não estiver, tentar calcular a partir dos itens
-            const items = cmd.items || cmd.command_products || [];
-            if (Array.isArray(items) && items.length > 0) {
-              const itemsTotal = items.reduce((itemSum, item) => {
-                const quantity = item.quantity || item.quantidade || 0;
-                const price = item.price || item.preco || 0;
-                return itemSum + (price * quantity);
-              }, 0);
-              return sum + itemsTotal;
-            }
+            
             return sum;
           }, 0);
         }
 
-        // Obter comandas abertas
-        const { data: openCommandsData } = await supabase
-          .from('commands')
-          .select(`
-            *,
-            table:table_id(*),
-            user:user_id(*)
-          `)
-          .eq('restaurant_id', restaurantId)
-          .eq('status', 'open')
-          .order('created_at', { ascending: false })
-          .limit(5);
+        // Filtrar comandas abertas para exibição no dashboard (limitando a 5)
+        const recentOpenCommands = openCommands.slice(0, 5);
 
-        // Obter funcionários ativos no turno
+        // Buscar funcionários ativos no turno
         const { data: activeStaff } = await supabase
           .from('users')
           .select('*')
@@ -173,12 +230,12 @@ export default function ManagerDashboard() {
           availableTables,
           occupiedTables,
           reservedTables,
-          totalCommands: commands?.length || 0,
-          openCommands: openCommandsData?.length || 0,
+          totalCommands: todayClosedCommands.length || 0,
+          openCommands: openCommands.length || 0,
           todaySales
         });
 
-        setRecentCommands(openCommandsData || []);
+        setRecentCommands(recentOpenCommands || []);
         setStaffOnShift(activeStaff || []);
       } catch (error: any) {
         console.error('Erro ao carregar dashboard:', error);

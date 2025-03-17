@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { User, Command, Table, Product } from '@/types';
 import { useRouter } from 'next/navigation';
@@ -36,6 +36,8 @@ interface CommandWithRelations extends Command {
 
 export default function CommandDetails({ params }: { params: { id: string } }) {
   const router = useRouter();
+  
+  // TODO: Em uma versão futura do Next.js, será necessário usar React.use(params) para acessar os parâmetros
   const { id } = params;
   
   const [command, setCommand] = useState<CommandWithRelations | null>(null);
